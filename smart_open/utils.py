@@ -197,10 +197,10 @@ class FileLikeProxy(wrapt.ObjectProxy):
         traceback: TracebackType | None,
     ) -> Any:
         """Exit inner after exiting outer."""
-        try:
-            return super().__exit__(exc_type, exc_value, traceback)
-        finally:
+        result = super().__exit__(exc_type, exc_value, traceback)
+        if self.__inner is not self.__wrapped__ and not getattr(self.__inner, "closed", False):
             self.__inner.__exit__(exc_type, exc_value, traceback)
+        return result
 
     def __next__(self) -> Any:
         """Delegate iteration to the wrapped file-like object."""

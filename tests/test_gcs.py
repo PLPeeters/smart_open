@@ -375,6 +375,31 @@ class WriterTest(unittest.TestCase):
             **smart_open.gcs._DEFAULT_WRITE_OPEN_KWARGS,  # test reaches into private state
         )
 
+    def test_upload_failure_during_text_close_is_not_retried(self):
+        """Do not retry a failed SDK writer upload during proxy cleanup."""
+        upload_error = ConnectionError("upload failed")
+        sdk_blob = google.cloud.storage.Blob(BLOB_NAME, bucket=mock.Mock())
+        writer = sdk_blob.open("wb", ignore_flush=True)
+        upload = mock.Mock(side_effect=[upload_error, ValueError("writer state changed")])
+        writer._upload_chunks_from_buffer = upload
+
+        fake_blob = self.client.bucket(BUCKET_NAME).blob(BLOB_NAME)
+        fake_blob.open.side_effect = None
+        fake_blob.open.return_value = writer
+        url = f"gs://{BUCKET_NAME}/{BLOB_NAME}"
+
+        with (
+            pytest.raises(ConnectionError) as exc_info,
+            smart_open.open(url, "w", transport_params={"client": self.client}) as fout,
+        ):
+            fout.write("payload")
+
+        assert exc_info.value is upload_error
+        upload.assert_called_once_with(1)
+
+        upload.side_effect = None
+        writer.close()
+
     def test_open_kwargs_passthrough(self):
         """Open kwargs passthrough."""
         open_kwargs = {"ignore_flush": True, "property": "value", "something": 2}
